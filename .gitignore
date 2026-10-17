@@ -1,0 +1,19 @@
+node_modules/
+dist/
+release/
+.DS_Store
+analysis/evidence.json
+tsconfig.tsbuildinfo
+assets/icon.iconset/
+dist-share/
+
+# Local verification captures and private configuration
+artifacts/
+analysis/*.png
+analysis/*.jpg
+.env
+.env.*
+!.env.example
+*.log
+.lithos/
+.lithos-trash/

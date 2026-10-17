@@ -1,0 +1,842 @@
+.lc-canvas {
+  --lc-card: var(--panel, #22222a);
+  --lc-fg: var(--text, #e7e5ec);
+  --lc-muted: var(--muted, #92909c);
+  --lc-border: var(--border, #36353e);
+  --lc-accent: var(--accent, #a78bfa);
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 280px;
+  overflow: hidden;
+  outline: none;
+  background-color: var(--bg, #19191f);
+  background-image: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--lc-muted) 25%, transparent) 1px,
+    transparent 1px
+  );
+  color: var(--lc-fg);
+  font-family: inherit;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.lc-canvas *,
+.lc-recovery * {
+  box-sizing: border-box;
+}
+.lc-canvas button,
+.lc-recovery button {
+  font: inherit;
+  cursor: pointer;
+}
+.lc-canvas button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}
+.lc-canvas button:focus-visible,
+.lc-recovery button:focus-visible,
+.lc-canvas [tabindex]:focus-visible {
+  outline: 2px solid var(--lc-accent, var(--accent));
+  outline-offset: 3px;
+}
+.lc-canvas input,
+.lc-canvas textarea,
+.lc-recovery textarea {
+  font: inherit;
+}
+.lc-canvas button,
+.lc-canvas input,
+.lc-canvas textarea {
+  color: inherit;
+}
+.lc-dragging,
+.lc-dragging .lc-card-header {
+  cursor: grabbing;
+}
+.lc-connecting,
+.lc-connecting .lc-card,
+.lc-connecting .lc-card-header {
+  cursor: crosshair;
+}
+
+.lc-toolbar,
+.lc-zoom,
+.lc-selection-tools {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border: 1px solid var(--lc-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--lc-card) 95%, transparent);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 3px 10px #00000015,
+    0 12px 32px #00000012;
+  z-index: 20;
+  cursor: default;
+}
+.lc-toolbar {
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.lc-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 33px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lc-muted);
+  font-size: 12px;
+  line-height: 1;
+}
+.lc-toolbar button:hover,
+.lc-zoom button:hover,
+.lc-icon-button:hover {
+  background: color-mix(in srgb, var(--lc-muted) 12%, transparent);
+  color: var(--lc-fg);
+}
+.lc-toolbar .lc-active {
+  color: var(--lc-accent);
+  background: color-mix(in srgb, var(--lc-accent) 14%, transparent);
+}
+.lc-divider {
+  display: block;
+  flex: 0 0 1px;
+  width: 1px;
+  height: 19px;
+  background: var(--lc-border);
+  margin: 0 4px;
+}
+.lc-canvas .lc-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 29px;
+  height: 29px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--lc-muted);
+  flex-shrink: 0;
+}
+.lc-canvas .lc-icon-button:hover {
+  background: color-mix(in srgb, var(--lc-muted) 12%, transparent);
+  color: var(--lc-fg);
+}
+
+.lc-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+.lc-edges {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+.lc-edge {
+  color: color-mix(in srgb, var(--lc-muted) 65%, var(--lc-card));
+}
+.lc-edge-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.lc-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 20;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+.lc-edge:hover,
+.lc-selected-edge {
+  color: var(--lc-accent);
+}
+.lc-selected-edge .lc-edge-line {
+  stroke-width: 2.5;
+}
+.lc-edge-label {
+  pointer-events: all;
+  cursor: text;
+}
+.lc-edge-label rect {
+  fill: var(--lc-card);
+  stroke: var(--lc-border);
+  stroke-width: 1;
+}
+.lc-edge-label text {
+  fill: var(--lc-muted);
+  font-size: 12px;
+  font-family: inherit;
+}
+.lc-selected-edge .lc-edge-label rect {
+  stroke: var(--lc-accent);
+}
+.lc-pending-edge {
+  fill: none;
+  stroke: var(--lc-accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  pointer-events: none;
+}
+
+.lc-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--lc-border);
+  border-radius: 9px;
+  background: var(--lc-card);
+  box-shadow:
+    0 4px 12px #00000012,
+    0 16px 30px #0000000a;
+  cursor: default;
+  transition:
+    box-shadow 0.15s,
+    border-color 0.15s;
+}
+.lc-card:hover {
+  border-color: color-mix(in srgb, var(--lc-muted) 65%, var(--lc-border));
+}
+.lc-card.lc-selected {
+  border-color: var(--lc-accent);
+  box-shadow:
+    0 0 0 1px var(--lc-accent),
+    0 6px 24px #00000020;
+  z-index: 3;
+}
+.lc-card.lc-colored {
+  background: color-mix(in srgb, var(--lc-node-color) 8%, var(--lc-card));
+  border-color: color-mix(in srgb, var(--lc-node-color) 60%, var(--lc-border));
+}
+.lc-card.lc-colored.lc-selected {
+  box-shadow:
+    0 0 0 1px var(--lc-node-color),
+    0 6px 24px #00000020;
+  border-color: var(--lc-node-color);
+}
+.lc-card-header {
+  flex: 0 0 37px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--lc-border) 65%, transparent);
+  color: var(--lc-muted);
+  cursor: grab;
+  font-size: 11px;
+  font-weight: 500;
+}
+.lc-colored .lc-card-header {
+  color: color-mix(in srgb, var(--lc-node-color) 80%, var(--lc-fg));
+}
+.lc-card-header > svg {
+  flex-shrink: 0;
+}
+.lc-card-header > span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-card-header .lc-icon-button {
+  width: 25px;
+  height: 25px;
+  opacity: 0;
+}
+.lc-card:hover .lc-card-header .lc-icon-button,
+.lc-selected .lc-card-header .lc-icon-button,
+.lc-card:focus-within .lc-card-header .lc-icon-button {
+  opacity: 1;
+}
+.lc-card-text {
+  flex: 1;
+  min-height: 0;
+  padding: 19px 20px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--lc-fg);
+}
+.lc-card-text.lc-placeholder {
+  color: var(--lc-muted);
+  font-size: 13px;
+}
+.lc-card-text .markdown-preview {
+  padding: 0;
+  margin: 0;
+  min-height: 0;
+  white-space: normal;
+  font-size: 14px;
+  line-height: 1.75;
+}
+.lc-card-text .markdown-preview > :first-child {
+  margin-top: 0;
+}
+.lc-card-text .markdown-preview > :last-child {
+  margin-bottom: 0;
+}
+.lc-card-text .markdown-preview h1 {
+  font-size: 21px;
+  line-height: 1.4;
+  margin: 0 0 12px;
+}
+.lc-card-text .markdown-preview h2 {
+  font-size: 18px;
+  line-height: 1.4;
+  margin: 16px 0 9px;
+}
+.lc-card-text .markdown-preview h3 {
+  font-size: 15px;
+  margin: 14px 0 8px;
+}
+.lc-card-text .markdown-preview p {
+  margin: 9px 0;
+}
+.lc-card-text .markdown-preview ul,
+.lc-card-text .markdown-preview ol {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.lc-card-text .markdown-preview a {
+  color: var(--lc-accent);
+  cursor: pointer;
+}
+.lc-card-text .markdown-preview code {
+  font-size: 12px;
+  background: color-mix(in srgb, var(--lc-muted) 10%, transparent);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+.lc-card-text .markdown-preview pre {
+  overflow: auto;
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  border-radius: 5px;
+  padding: 10px;
+}
+.lc-card-text .markdown-preview pre code {
+  padding: 0;
+  background: transparent;
+}
+.lc-card-text .markdown-preview blockquote {
+  margin: 12px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--lc-accent);
+  color: var(--lc-muted);
+}
+.lc-card-text .markdown-preview img {
+  max-width: 100%;
+}
+.lc-card-text .markdown-preview table {
+  font-size: 11px;
+}
+.lc-card-text .markdown-preview .properties {
+  font-size: 11px;
+}
+.lc-card-editor {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 19px 20px;
+  border: 0;
+  border-radius: 0 0 9px 9px;
+  outline: none;
+  background: transparent;
+  line-height: 1.75;
+  font-size: 14px !important;
+  color: var(--lc-fg);
+  cursor: text;
+  user-select: text;
+}
+.lc-card-editor::placeholder {
+  color: var(--lc-muted);
+}
+.lc-file-card-body {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 15px 20px 10px;
+}
+.lc-file-emblem {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lc-accent);
+  margin-bottom: 8px;
+}
+.lc-file-card-body > strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 550;
+}
+.lc-file-card-body > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--lc-muted);
+  margin-top: 5px;
+}
+.lc-file-card-body > small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--lc-muted);
+  font-size: 10px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+.lc-external-url {
+  color: var(--lc-accent);
+}
+.lc-card-group {
+  background: color-mix(in srgb, var(--lc-muted) 5%, transparent);
+  z-index: -1;
+  border-style: dashed;
+}
+.lc-group-body {
+  padding: 15px;
+  color: var(--lc-muted);
+  font-size: 12px;
+}
+
+.lc-port {
+  position: absolute;
+  display: block;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 2px solid var(--lc-accent);
+  border-radius: 50%;
+  background: var(--lc-card);
+  opacity: 0;
+  z-index: 5;
+  transition:
+    opacity 0.12s,
+    transform 0.12s;
+}
+.lc-card:hover .lc-port,
+.lc-selected .lc-port,
+.lc-connecting .lc-port,
+.lc-port:focus-visible {
+  opacity: 1;
+}
+.lc-port-top {
+  top: -6px;
+  left: calc(50% - 6px);
+}
+.lc-port-right {
+  right: -6px;
+  top: calc(50% - 6px);
+}
+.lc-port-bottom {
+  bottom: -6px;
+  left: calc(50% - 6px);
+}
+.lc-port-left {
+  left: -6px;
+  top: calc(50% - 6px);
+}
+.lc-port:hover,
+.lc-port-active {
+  background: var(--lc-accent);
+  transform: scale(1.3);
+}
+.lc-resize {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 17px;
+  height: 17px;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  cursor: nwse-resize;
+  color: var(--lc-muted);
+}
+.lc-resize svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+.lc-card:hover .lc-resize,
+.lc-selected .lc-resize,
+.lc-resize:focus-visible {
+  opacity: 0.8;
+}
+
+.lc-picker {
+  position: absolute;
+  top: 76px;
+  left: 50%;
+  width: 335px;
+  max-width: calc(100% - 30px);
+  transform: translateX(-50%);
+  z-index: 30;
+  background: var(--lc-card);
+  border: 1px solid var(--lc-border);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 12px 45px #00000030;
+  cursor: default;
+}
+.lc-picker-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3px 7px 8px;
+  color: var(--lc-muted);
+  font-size: 11px;
+}
+.lc-picker > input {
+  width: 100%;
+  border: 1px solid var(--lc-border);
+  border-radius: 6px;
+  padding: 9px 11px;
+  background: var(--bg);
+  outline: none;
+  font-size: 12px;
+}
+.lc-picker > input:focus {
+  border-color: var(--lc-accent);
+}
+.lc-picker-list {
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 7px;
+}
+.lc-picker-list > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 8px;
+  text-align: left;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+}
+.lc-picker-list > button:hover {
+  background: color-mix(in srgb, var(--lc-accent) 12%, transparent);
+}
+.lc-picker-list > button > svg {
+  flex-shrink: 0;
+  color: var(--lc-muted);
+}
+.lc-picker-list > button > span {
+  flex: 1;
+  min-width: 0;
+}
+.lc-picker-list strong,
+.lc-picker-list small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lc-picker-list strong {
+  font-size: 12px;
+  font-weight: 500;
+}
+.lc-picker-list small {
+  font-size: 10px;
+  color: var(--lc-muted);
+  margin-top: 3px;
+}
+.lc-picker-list > p {
+  text-align: center;
+  padding: 20px 0;
+  color: var(--lc-muted);
+  font-size: 12px;
+}
+
+.lc-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -46%);
+  text-align: center;
+  cursor: default;
+  max-width: calc(100% - 30px);
+}
+.lc-empty-illustration {
+  width: 220px;
+  height: 115px;
+  position: relative;
+  margin: 0 auto 20px;
+}
+.lc-empty-illustration span {
+  position: absolute;
+  display: block;
+  border: 1px solid color-mix(in srgb, var(--lc-accent) 36%, var(--lc-border));
+  background: color-mix(in srgb, var(--lc-accent) 6%, var(--lc-card));
+  border-radius: 6px;
+  z-index: 1;
+  box-shadow: 0 5px 20px #0000000a;
+}
+.lc-empty-illustration span::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 9px;
+  right: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lc-accent) 25%, transparent);
+  box-shadow: 0 8px 0 color-mix(in srgb, var(--lc-accent) 14%, transparent);
+}
+.lc-empty-illustration span:nth-child(1) {
+  width: 58px;
+  height: 50px;
+  left: 5px;
+  top: 32px;
+}
+.lc-empty-illustration span:nth-child(2) {
+  width: 68px;
+  height: 47px;
+  left: 137px;
+  top: 4px;
+}
+.lc-empty-illustration span:nth-child(3) {
+  width: 58px;
+  height: 45px;
+  left: 137px;
+  top: 69px;
+}
+.lc-empty-illustration svg {
+  position: absolute;
+  inset: 0;
+  fill: none;
+  stroke: color-mix(in srgb, var(--lc-accent) 45%, transparent);
+  stroke-width: 1.5;
+}
+.lc-empty h2 {
+  margin: 0 0 10px;
+  font-size: 21px;
+  font-weight: 560;
+  letter-spacing: -0.7px;
+}
+.lc-empty p {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: var(--lc-muted);
+  line-height: 1.8;
+}
+.lc-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 15px;
+  border: 1px solid color-mix(in srgb, var(--accent, #a78bfa) 55%, transparent);
+  border-radius: 7px;
+  color: var(--text, #eee);
+  background: color-mix(
+    in srgb,
+    var(--accent, #a78bfa) 22%,
+    var(--panel, #22222a)
+  );
+  font-size: 12px !important;
+}
+.lc-primary:hover {
+  background: color-mix(
+    in srgb,
+    var(--accent, #a78bfa) 33%,
+    var(--panel, #22222a)
+  );
+}
+.lc-empty > small {
+  display: block;
+  font-size: 10px;
+  color: var(--lc-muted);
+  margin-top: 19px;
+  opacity: 0.75;
+}
+
+.lc-selection-tools {
+  bottom: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 9px;
+  gap: 8px;
+  max-width: calc(100% - 28px);
+}
+.lc-selection-label {
+  font-size: 11px;
+  color: var(--lc-muted);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.lc-selection-tools > input {
+  width: 130px;
+  padding: 5px 7px;
+  border: 1px solid var(--lc-border);
+  border-radius: 4px;
+  background: var(--bg);
+  font-size: 11px;
+  outline: none;
+}
+.lc-selection-tools > input:focus {
+  border-color: var(--lc-accent);
+}
+.lc-color-options {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.lc-color-option {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--lc-fg) 20%, transparent);
+}
+.lc-color-option.lc-color-selected {
+  box-shadow:
+    0 0 0 2px var(--lc-card),
+    0 0 0 3px var(--lc-muted);
+}
+.lc-canvas .lc-delete:hover {
+  color: #e87e83;
+  background: #e87e8315;
+}
+.lc-canvas-hint {
+  position: absolute;
+  bottom: 22px;
+  left: 20px;
+  font-size: 10px;
+  color: var(--lc-muted);
+  opacity: 0.8;
+  pointer-events: none;
+}
+.lc-zoom {
+  right: 18px;
+  bottom: 15px;
+  padding: 4px;
+  gap: 1px;
+}
+.lc-zoom-value {
+  min-width: 42px;
+  height: 29px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--lc-muted) !important;
+  font-size: 11px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.lc-recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  height: 100%;
+  padding: 40px;
+  color: var(--text);
+  background: var(--bg);
+  overflow: auto;
+}
+.lc-recovery-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.lc-recovery-heading > svg {
+  color: var(--accent);
+}
+.lc-recovery h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 550;
+}
+.lc-recovery p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.8;
+}
+.lc-recovery-error {
+  color: #d97981;
+  font-size: 12px;
+}
+.lc-recovery textarea {
+  min-height: 200px;
+  flex: 1;
+  width: 100%;
+  padding: 15px;
+  resize: vertical;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  line-height: 1.6;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+}
+.lc-recovery > button {
+  align-self: flex-start;
+}
+
+@media (max-width: 650px) {
+  .lc-toolbar {
+    top: 12px;
+  }
+  .lc-toolbar button {
+    padding: 6px 7px;
+  }
+  .lc-toolbar button > span {
+    display: none;
+  }
+  .lc-canvas-hint {
+    bottom: 23px;
+    max-width: 44%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .lc-selection-tools {
+    gap: 5px;
+  }
+  .lc-selection-label {
+    display: none;
+  }
+  .lc-selection-tools > input {
+    width: 90px;
+  }
+  .lc-color-options {
+    gap: 5px;
+  }
+}
