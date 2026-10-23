@@ -56,8 +56,6 @@ import {
   isNote,
   resolveLink,
   extractLinks,
-  headings,
-  tags,
   normalize,
   splitLink,
   isExternalLink,
@@ -70,6 +68,8 @@ import CanvasView from "./components/CanvasView";
 import GraphView from "./components/GraphView";
 import ShareDialog from "./components/ShareDialog";
 import { attachmentMarkdown } from "./attachmentLinks";
+import { EditorSessions } from "./editorSessions";
+import { NoteIndex } from "./noteIndex";
 
 type Modal = {
   kind:
@@ -142,6 +142,9 @@ export default function App() {
     [ready, setReady] = useState(false),
     [unreadable, setUnreadable] = useState<Set<string>>(new Set());
   const revisions = useRef(new Map<string, number>());
+  const editorSessions = useRef(new EditorSessions());
+  const splitSessions = useRef(new EditorSessions());
+  const noteIndex = useRef(new NoteIndex());
   const docsRef = useRef(docs);
   docsRef.current = docs;
   const dirty = useRef(new Map<string, string>()),
@@ -179,6 +182,7 @@ export default function App() {
         path,
         title: titleOf(path),
         content: docs[path] || "",
+        metadata: noteIndex.current.get(path, docs[path] || ""),
       })),
     [paths, docs],
   );
@@ -275,6 +279,9 @@ export default function App() {
   }, []);
   async function initialize(s?: VaultState) {
     setReady(false);
+    editorSessions.current = new EditorSessions();
+    splitSessions.current = new EditorSessions();
+    noteIndex.current = new NoteIndex();
     setDocs({});
     setUnreadable(new Set());
     rootToken.current++;
@@ -718,16 +725,18 @@ export default function App() {
   const activeContent = docs[active] || "",
     activeNote = isNote(active),
     activeCanvas = active.endsWith(".canvas");
-  const outLinks = extractLinks(activeContent);
+  const activeMetadata = noteIndex.current.get(active, activeContent);
+  const outLinks = activeMetadata.links;
   const backlinks = notes.filter(
     (n) =>
       n.path !== active &&
-      extractLinks(n.content).some(
+      n.metadata.links.some(
         (l) => resolveLink(l, n.path, paths) === active,
       ),
   );
-  const outline = headings(activeContent);
-  const allTags = [...new Set(notes.flatMap((n) => tags(n.content)))].sort();
+  const outline = activeMetadata.headings;
+  const allTags = useMemo(() => [...new Set(notes.flatMap((n) => n.metadata.tags))].sort(), [notes]);
+  useEffect(() => noteIndex.current.retain(paths), [paths]);
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
@@ -735,7 +744,7 @@ export default function App() {
     return notes
       .filter((n) =>
         tag
-          ? tags(n.content).some((t) => t.toLowerCase().includes(tag))
+          ? n.metadata.tags.some((t) => t.toLowerCase().includes(tag))
           : (n.title + "\n" + n.content).toLowerCase().includes(q),
       )
       .map((n) => ({
@@ -802,9 +811,7 @@ export default function App() {
       );
     });
   }
-  const wordCount = activeContent.trim()
-    ? activeContent.trim().split(/\s+/).length
-    : 0;
+  const wordCount = activeMetadata.wordCount ?? "—";
   return (
     <div className="app-shell" onClick={() => menu && setMenu(null)}>
       <div className="titlebar">
@@ -1246,6 +1253,8 @@ export default function App() {
                     <button onClick={() => setSharePath(active)}>공유 창 열기</button>
                   </div>}
                   <NoteEditor
+                    key={vault?.root}
+                    sessions={editorSessions.current}
                     content={activeContent}
                     onChange={(c) => edit(active, c)}
                     path={active}
@@ -1292,6 +1301,7 @@ export default function App() {
                   />
                 </div>
                 <NoteEditor
+                    sessions={splitSessions.current}
                   content={docs[splitPath] || ""}
                   onChange={(c) => edit(splitPath, c)}
                   path={splitPath}
@@ -1389,7 +1399,7 @@ export default function App() {
                     <ChevronDown size={13} />이 노트의 태그
                   </h3>
                   <div className="tag-pills">
-                    {tags(activeContent).map((t) => (
+                    {activeMetadata.tags.map((t) => (
                       <button
                         key={t}
                         onClick={() => {
@@ -1455,7 +1465,7 @@ export default function App() {
                     <Hash size={13} />
                     {t}
                     <span>
-                      {notes.filter((n) => tags(n.content).includes(t)).length}
+                      {notes.filter((n) => n.metadata.tags.includes(t)).length}
                     </span>
                   </button>
                 ))}

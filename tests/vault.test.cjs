@@ -19,6 +19,22 @@ async function fixture(t, options = {}) {
   return { base, root, vault };
 }
 
+test("32 MiB Unicode notes survive closing and reopening; oversize saves preserve the original", async (t) => {
+  const { root, vault } = await fixture(t);
+  const limit = 32 * 1024 * 1024;
+  const content = "한".repeat(Math.floor(limit / 3)) + "x".repeat(limit % 3);
+  assert.equal(Buffer.byteLength(content), limit);
+  await vault.writeFile("Large.md", content);
+  vault.close();
+  const reopened = await new Vault(root, { watch: false }).init();
+  t.after(() => reopened.close());
+  assert.equal(await reopened.readFile("Large.md"), content);
+  await assert.rejects(reopened.writeFile("Large.md", content + "x"), /32 MB/);
+  assert.equal(await reopened.readFile("Large.md"), content);
+  await fs.writeFile(path.join(root, "TooLarge.md"), content + "x");
+  await assert.rejects(reopened.readFile("TooLarge.md"), /32 MB/);
+});
+
 test("writes Markdown atomically, creates folders, and preserves every queued save", async (t) => {
   const { root, vault } = await fixture(t);
   await vault.createFile("Projects/한글.md", "# First");

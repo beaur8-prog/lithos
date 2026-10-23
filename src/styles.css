@@ -573,6 +573,18 @@ hr {
 .mode-split .editor-column {
   border-right: 1px solid var(--border);
 }
+.editor-column[hidden] { display: none; }
+.note-body.large-note { flex-direction: column; }
+.large-note-notice {
+  max-width: 790px;
+  padding: 10px 20px;
+  margin: 0 auto 16px;
+  color: var(--muted);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
 .cm-editor {
   background: transparent !important;
 }

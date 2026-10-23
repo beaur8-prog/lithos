@@ -1,6 +1,9 @@
 import { createElement, useMemo, useState, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import CodeMirror from "@uiw/react-codemirror";
+import PersistentEditor from "./PersistentEditor";
+import { EditorSessions, isLargeNote, textChange } from "../editorSessions";
+import { Transaction } from "@codemirror/state";
+import { isolateHistory } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxTree } from "@codemirror/language";
 import { autocompletion, CompletionContext } from "@codemirror/autocomplete";
@@ -78,7 +81,12 @@ function liveDecorations(open: (s: string) => void) {
             node = node.parent;
           }
         };
-        for (let n = 1; n <= v.state.doc.lines; n++) {
+        const visible = new Set<number>();
+        for (const { from, to } of v.visibleRanges) {
+          const end = v.state.doc.lineAt(to).number;
+          for (let n = v.state.doc.lineAt(from).number; n <= end; n++) visible.add(n);
+        }
+        for (const n of visible) {
           const line = v.state.doc.line(n);
           if (inCode(line.from)) continue;
           const h = /^(#{1,6}) /.exec(line.text);
@@ -191,10 +199,14 @@ export function MarkdownPreview({
 }) {
   const article = useRef<HTMLElement>(null);
   const [linkError, setLinkError] = useState("");
+  useEffect(() => setLinkError(""), [path]);
+  if (isLargeNote(content)) return <article className="markdown-preview">
+    <p className="large-note-notice">대용량 문서의 앞부분만 표시합니다. 노트를 열면 전체 원문을 확인하고 편집할 수 있습니다.</p>
+    <pre>{content.slice(0, 8000)}</pre>
+  </article>;
   const fm = /^---\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)(?:\r?\n|$)/.exec(content);
   const body = fm ? content.slice(fm[0].length) : content;
   const sourceStart = fm?.[0].length || 0;
-  useEffect(() => setLinkError(""), [path]);
   const heading = (
     tag: string,
     {
@@ -388,6 +400,7 @@ export default function NoteEditor({
   fontSize,
   onLink,
   jump,
+  sessions,
 }: {
   content: string;
   onChange: (s: string) => void;
@@ -398,9 +411,11 @@ export default function NoteEditor({
   fontSize: number;
   onLink: (s: string) => void;
   jump?: { offset: number; tick: number };
+  sessions: EditorSessions;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const large = useMemo(() => isLargeNote(content), [content]);
   const linkRef = useRef(onLink);
   linkRef.current = (raw) => {
     const navigation = localLinkForNavigation(raw, path, paths);
@@ -408,7 +423,7 @@ export default function NoteEditor({
   };
   const extensions = useMemo(
     () => [
-      markdown(),
+      ...(large ? [] : [markdown()]),
       EditorView.lineWrapping,
       drawSelection({ cursorBlinkRate: 0 }),
       EditorView.theme({
@@ -457,13 +472,13 @@ export default function NoteEditor({
         { key: "Mod-i", run: (v) => wrap(v, "*") },
         { key: "Mod-k", run: (v) => wrap(v, "[[", "]]") },
       ]),
-      ...(mode === "live" ? [liveDecorations((s) => linkRef.current(s))] : []),
+      ...(mode === "live" && !large ? [liveDecorations((s) => linkRef.current(s))] : []),
     ],
-    [paths.join("|"), fontSize, mode],
+    [paths.join("|"), fontSize, mode, large],
   );
   useEffect(() => {
     if (!jump) return;
-    if (mode === "preview") {
+    if (mode === "preview" && !large) {
       const element = [
         ...root.current!.querySelectorAll<HTMLElement>("[data-source-offset]"),
       ].find((element) => Number(element.dataset.sourceOffset) === jump.offset);
@@ -483,35 +498,37 @@ export default function NoteEditor({
     }
   }, [jump, path]);
   return (
-    <div ref={root} className={"note-body mode-" + mode} style={{ fontSize }}>
-      {mode !== "preview" && (
-        <div className="editor-column">
-          <CodeMirror
-            key={path}
+    <div ref={root} className={"note-body mode-" + (large ? "source large-note" : mode)} style={{ fontSize }}>
+      {large && <div className="large-note-notice" role="status">
+        대용량 문서: 빠른 응답을 위해 서식·미리보기 대신 원문을 표시하고 연결·개요·태그·단어 수 분석을 생략합니다.
+        {mode === "preview" ? " 읽기 전용입니다. 수정하려면 원본 또는 실시간 편집을 선택하세요." : " 전체 내용의 편집·저장·실행 취소를 사용할 수 있습니다."}
+      </div>}
+        <div className="editor-column" hidden={mode === "preview" && !large}>
+          <PersistentEditor
+            sessionKey={path}
+            sessions={sessions}
             value={content}
             theme={theme}
             extensions={extensions}
-            basicSetup={{
-              lineNumbers: false,
-              foldGutter: false,
-              highlightActiveLine: true,
-              highlightActiveLineGutter: false,
-            }}
+            readOnly={mode === "preview"}
             onCreateEditor={(v) => {
               editor.current = v;
             }}
             onChange={onChange}
           />
         </div>
-      )}
-      {(mode === "preview" || mode === "split") && (
+      {!large && (mode === "preview" || mode === "split") && (
         <div className="preview-column">
           <MarkdownPreview
             content={content}
             path={path}
             paths={paths}
             onLink={onLink}
-            onChange={onChange}
+            onChange={(next) => {
+              const view = editor.current;
+              if (view) view.dispatch({ changes: textChange(view.state.doc.toString(), next),
+                annotations: [Transaction.userEvent.of("input.check"), isolateHistory.of("full")] });
+            }}
           />
         </div>
       )}
@@ -524,6 +541,8 @@ function wrap(v: EditorView, a: string, b = a) {
   v.dispatch({
     changes: { from, to, insert: a + selected + b },
     selection: { anchor: from + a.length, head: to + a.length },
+    annotations: [Transaction.userEvent.of("input.format"), isolateHistory.of("full")],
+    scrollIntoView: true,
   });
   return true;
 }
