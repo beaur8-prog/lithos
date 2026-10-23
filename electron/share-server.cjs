@@ -17,6 +17,22 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 
+function sharePage(template, title) {
+  const escaped = String(title || "공유 노트").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+  // Link preview crawlers read the initial HTML without running the reader's JS.
+  // A callback preserves literal dollar signs in note titles during replacement.
+  return template.replace(/<title>[\s\S]*?<\/title>/i, () => [
+    `<title>${escaped} · Lithos</title>`,
+    `<meta property="og:title" content="${escaped}" />`,
+    '<meta property="og:type" content="article" />',
+    '<meta property="og:site_name" content="Lithos" />',
+    '<meta name="twitter:card" content="summary" />',
+    `<meta name="twitter:title" content="${escaped}" />`,
+  ].join("\n    "));
+}
+
 class ShareServer {
   constructor({ directory, webRoot, tunnel, getVault, onChange = () => {} }) {
     this.directory = directory;
@@ -285,7 +301,7 @@ class ShareServer {
     }
     return send(
       200,
-      await fs.readFile(path.join(this.webRoot, "share.html")),
+      sharePage(await fs.readFile(path.join(this.webRoot, "share.html"), "utf8"), record.title),
       "text/html; charset=utf-8",
     );
   }

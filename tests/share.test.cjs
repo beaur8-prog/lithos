@@ -21,7 +21,7 @@ async function fixture(t) {
   await fs.mkdir(path.join(webRoot, "assets"), { recursive: true });
   await fs.writeFile(
     path.join(webRoot, "share.html"),
-    "<!doctype html><title>Viewer</title>",
+    '<!doctype html><html><head><title>Lithos · 공유 노트</title></head><body><script src="/static/assets/reader.js"></script></body></html>',
   );
   await fs.writeFile(
     path.join(webRoot, "assets", "reader.js"),
@@ -42,6 +42,53 @@ async function fixture(t) {
   });
   return { root, vault, server, directory, webRoot, tunnel };
 }
+
+test("link previews receive the note title in the first HTML response without executing JavaScript", async (t) => {
+  const { vault, server } = await fixture(t);
+  const title = '회의 & "결정" <다음 단계> \'검토\' 😀 $&';
+  await vault.createFile(title + ".md", "---\nprivate: do-not-preview\n---\n# Note body");
+  const share = (await server.create(vault, title + ".md", 7)).shares[0];
+  const url = `http://127.0.0.1:${server.port}/s/${share.token}`;
+  const response = await fetch(url);
+  const html = await response.text();
+  const escaped = '회의 &amp; &quot;결정&quot; &lt;다음 단계&gt; &#39;검토&#39; 😀 $&amp;';
+  assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+  assert.ok(html.includes(`<title>${escaped} · Lithos</title>`));
+  assert.ok(html.includes(`<meta property="og:title" content="${escaped}"`));
+  assert.ok(html.includes(`<meta name="twitter:title" content="${escaped}"`));
+  assert.match(html, /<script src="\/static\/assets\/reader.js"><\/script>/);
+  assert.doesNotMatch(html, /<다음 단계>|do-not-preview|Note body/);
+  assert.equal((html.match(/<title>/g) || []).length, 1);
+  assert.equal(response.headers.get("cache-control"), "no-store, max-age=0");
+  assert.equal(response.headers.get("x-robots-tag"), "noindex, nofollow, noarchive");
+  const head = await fetch(url, { method: "HEAD" });
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+  assert.equal((await (await fetch(url + "/data")).json()).title, title);
+});
+
+test("each share serves its own current title and withdrawn links reveal no preview metadata", async (t) => {
+  const { vault, server } = await fixture(t);
+  const first = (await server.create(vault, "Example.md", 0)).shares[0];
+  await vault.createFile("두 번째 노트.md", "Second body");
+  const second = (await server.create(vault, "두 번째 노트.md", 7)).shares.find((s) => s.token !== first.token);
+  const url = (share) => `http://127.0.0.1:${server.port}/s/${share.token}`;
+  assert.match(await (await fetch(url(first))).text(), /<title>Example · Lithos<\/title>/);
+  const secondHtml = await (await fetch(url(second) + "/")).text();
+  assert.match(secondHtml, /<title>두 번째 노트 · Lithos<\/title>/);
+  assert.doesNotMatch(secondHtml, /Example/);
+  // Title metadata follows the saved share record without a new URL or HTML build.
+  await server.persist({ ...server.records.get(first.token), title: "갱신된 제목" });
+  assert.match(await (await fetch(url(first))).text(), /<title>갱신된 제목 · Lithos<\/title>/);
+  assert.equal(server.state().shares.find((s) => s.token === first.token).url, first.url);
+  server.records.get(second.token).expiresAt = Date.now() - 1;
+  await server.revoke(first.token);
+  for (const share of [first, second]) {
+    const response = await fetch(url(share));
+    assert.equal(response.status, 404);
+    assert.doesNotMatch(await response.text(), /og:title|Example|두 번째 노트|갱신된 제목/);
+  }
+});
 
 test("shares only the selected snapshot, strips frontmatter, and protects all private routes", async (t) => {
   const { vault, server } = await fixture(t);
